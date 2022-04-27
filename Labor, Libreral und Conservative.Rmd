@@ -1,0 +1,271 @@
+---
+title: "Hausarbeit"
+output: html_document
+---
+
+
+```{r }
+library(quanteda)
+library(readtext)
+library(quanteda.textmodels)
+```
+
+
+**daten einlesen**
+```{r}
+
+manifestos<-readtext(paste0("manifestos/*.txt"),text_field = "texts")
+
+```
+
+
+
+**Corpus erstellen**
+```{r}
+corp<-corpus(manifestos)
+ideologie<- c("conservative","conservative","conservative","labor","labor",
+              "labor", "libral" , "libral", "libral")
+jahr<- c(2005,2010,2019,2005,2010,2019,2005,2010,2019)
+docvars(corp)<- data.frame(ideologie,jahr)
+summary(corp)
+```
+**Ein Function erstellen für die Tokenization und um den Corpus sauber zu machen **
+```{r}
+clean<- function(corpus){
+  assign("A", corpus)
+token<-tokens(A,remove_numbers = T,
+              remove_punct = T,
+              remove_symbols = T,
+              remove_separators = T)
+token<-tokens_remove(token,stopwords("english"))
+token<-tokens_tolower(token)
+token1<- tokens_remove(token)
+}
+
+```
+
+
+**clean Function benutzen und DTM erstellen**
+```{r}
+token<-clean(corp)
+head(token[[1]],20)
+DTM<- dfm(token)
+```
+
+**Function erstellen für TF-IDF**
+
+```{r}
+tf_idf<- function(tf.docs, DTM){
+  assign("B", tf.docs)
+  assign("C", DTM)
+  
+  tf<- as.vector(C[B,])
+  N.doc<-nrow(C)
+  ni.doc<-colSums(as.matrix(C))
+  idf<- log2(N.doc/ ni.doc)
+ 
+  tf_idf<-tf*idf
+  names(tf_idf)<-colnames(C)
+  tf_idf<-sort(tf_idf,decreasing = T, 20)
+return(sort(tf_idf, decreasing = T) )
+ 
+}
+```
+
+
+**die Umsetzung vor TF-IDF Function auf die Corpus **
+```{r}
+ which(corp$ideologie== "conservative")
+conser<-c(1,2,3)
+ which(corp$ideologie== "labor")
+labor<- c(4,5,6)
+ which(corp$ideologie== "libral")
+libral<-c(7,8,9)
+con<-tf_idf(conser,DTM) 
+lab<-tf_idf(labor,DTM)
+lib<-tf_idf(libral,DTM)
+head(con,20)
+head(lab,20)
+head(lib,20)
+```
+
+
+**logLikelihood Function**
+```{r}
+
+#LL
+LL<-function(tf.docs,DTM){
+  assign("D",tf.docs)
+  
+tf<- as.vector(DTM[D,])
+names(tf)<- colnames(DTM)
+tf<-tf[tf>0]
+
+tf.compare<-colSums(as.matrix(DTM))
+names(tf.compare)<-colnames(DTM)
+
+a <- tf 
+b <- tf.compare[names(tf)]
+c <- sum(tf)
+d <- sum(tf.compare)
+
+
+Expected1 <- c * (a+b) / (c+d)
+Expected2 <- d * (a+b) / (c+d)
+t1 <- a * log((a/Expected1))
+t2 <- b * log((b/Expected2))
+logLikelihood <- 2 * (t1 + t2)
+return(sort(logLikelihood, decreasing = T) )
+
+
+}
+```
+
+
+
+**die Umsetzung von logLikelihood Function auf die Corpus**
+```{r}
+
+llcon<-LL(conser,DTM) 
+lllab<-LL(c(labor),DTM)
+lllib<-LL(c(libral),DTM)
+
+```
+
+**Eine Dictionary zu erstellen wirden die wichtigsten 1000 Wörter in Coservative, Labor und Libral nach TF-IDF und LogLikelihood ausgesucht** 
+
+
+**Coservative**
+
+```{r}
+a<-as.data.frame(con)
+a$wort<- names(con)
+nrow(a)
+b<- as.data.frame(llcon)
+b$wort<- names(llcon)
+
+nrow( as.data.frame(c))
+
+a<- a[1:1000,]
+b<-b[1:1000,]
+c<- merge(a,b,by ="wort")
+```
+
+
+**Labor**
+
+```{r}
+  d<-as.data.frame(lab)
+d$wort<- names(lab)
+nrow(d)
+e<- as.data.frame(lllab)
+e$wort<- names(lllab)
+
+nrow( as.data.frame(e))
+
+d<- d[1:1000,]
+e<-e[1:1000,]
+f<- merge(e,d,by = "wort")
+
+```
+
+**Libral**
+```{r}
+
+  x<-as.data.frame(lib)
+x$wort<- names(lib)
+nrow(x)
+y<- as.data.frame(lllib)
+y$wort<- names(lllib)
+
+nrow( as.data.frame(y))
+
+x<- x[1:1000,]
+y<-y[1:1000,]
+z<- merge(x,y,by ="wort")
+```
+
+
+
+**die Ergebnisse sieht nicht besonders gut aus**
+```{r}
+head(c,20)
+head(f,20)
+head(z,20) 
+
+ 
+```
+
+
+**Eine Dictionary erstellen**
+```{r}
+
+ dic<-list(conservative = c$wort,labor =f$wort , libral= z$wort ) 
+dict<- dictionary(dic)   
+
+ 
+```
+
+
+**sotu-Datensatz einlesen und Corpus und DTM erstellen**
+```{r}
+
+
+
+    sotu<-read.csv("sotu.csv",
+                 sep = ";",
+                 encoding = "UTF-8", stringsAsFactors = F)
+
+sotucorp<- corpus(sotu)
+ sotutoken<- clean(sotucorp)
+DTM.sotu<- dfm(sotutoken)
+
+DTM.pre<- dfm_lookup (DTM.sotu[231,], dictionary = dict)
+
+```
+
+**Ein Versuch mit dem ertellten Dictionary**
+```{r}
+docvars(DTM.sotu)
+DTM.pre<-dfm(DTM.sotu, groups=DTM.sotu$president)
+DTM.dic<- dfm_lookup(DTM.pre,dictionary = dict)
+
+
+```
+
+**eine zweite Versuch, ab 1980** 
+
+```{r}
+unique(sotu$president)
+presidents<-unique( sotu$president[sotu$date> 1980])
+
+
+which(DTM.pre$president == presidents  )
+str(DTM.pre)
+which(DTM.pre@Dimnames$docs == presidents  )
+
+presidents <-  c("Franklin D. Roosevelt" ,"Harry S. Truman")
+Dtm.pre<- dfm_lookup(DTM.pre[ presidents,],dictionary = dict)
+
+```
+
+
+# Naive Bayes
+```{r}
+nb.train<- textmodel_nb(DTM,corp$ideologie)
+
+
+dtm.match<- dfm_match(DTM.pre, features = featnames(DTM))
+predic<- predict(nb.train, newdata= dtm.match)
+str(predic)
+df<-as.data.frame(predic)
+df$president<-rownames(df)
+
+table(df$predic)
+df[df$predic== "labor",]
+
+```
+
+
+
+
